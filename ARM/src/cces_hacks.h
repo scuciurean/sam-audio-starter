@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2021 - Analog Devices Inc. All Rights Reserved.
+ * Copyright (c) 2025 - Analog Devices Inc. All Rights Reserved.
  * This software is proprietary and confidential to Analog Devices, Inc.
  * and its licensors.
  *
@@ -9,16 +9,10 @@
  * software may not be used except as expressly authorized under the license.
  */
 
-#ifndef _fs_devman_cfg_h
-#define _fs_devman_cfg_h
+#ifndef _cces_hacks_h
+#define _cces_hacks_h
 
-#include "umm_malloc.h"
-#define FS_DEVMAN_CALLOC  umm_calloc
-#define FS_DEVMAN_FREE    umm_free
-
-#define FS_DEVMAN_MAX_DEVICES 5
-
-#define FS_DEVMAN_ENABLE_FATFS
-#define FS_DEVMAN_ENABLE_SPIFFS
+void THREAD_INIT_STDIO(void);
+void THREAD_FREE_STDIO(void);
 
 #endif
