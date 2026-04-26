@@ -90,6 +90,7 @@ SHELL_FUNC( shell_resize );
 SHELL_FUNC( shell_date );
 SHELL_FUNC( shell_echo );
 SHELL_FUNC( shell_shell );
+SHELL_FUNC( shell_param );
 
 SHELL_HELP( help );
 SHELL_HELP( ver );
@@ -133,6 +134,7 @@ SHELL_HELP( resize );
 SHELL_HELP( date );
 SHELL_HELP( echo );
 SHELL_HELP( shell );
+SHELL_HELP( param );
 
 //static const SHELL_COMMAND shell_commands[] =
 const SHELL_COMMAND shell_commands[] =
@@ -184,6 +186,7 @@ const SHELL_COMMAND shell_commands[] =
   { "date", shell_date },
   { "echo", shell_echo },
   { "shell", shell_shell },
+  { "param", shell_param},
   { "exit", NULL },
   { NULL, NULL }
 };
@@ -232,6 +235,7 @@ static const SHELL_HELP_DATA shell_help_data[] =
   SHELL_INFO( date ),
   SHELL_INFO( echo ),
   SHELL_INFO( shell ),
+  SHELL_INFO( param ),
   { NULL, NULL, NULL }
 };
 

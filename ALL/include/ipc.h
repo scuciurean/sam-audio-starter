@@ -39,6 +39,7 @@ enum IPC_TYPE {
     IPC_TYPE_SHARC1_READY,
     IPC_TYPE_PROCESS_AUDIO,
     IPC_TYPE_CYCLES,
+    IPC_TYPE_PARAMETER,
 };
 
 /*
@@ -91,6 +92,14 @@ typedef struct _IPC_MSG_PROCESS_AUDIO {
 } IPC_MSG_PROCESS_AUDIO;
 #pragma pack()
 
+#pragma pack(1)
+typedef struct _IPC_MSG_PARAMETER {
+       uint8_t id;
+       uint8_t reserved[3];
+       uint32_t value;
+} IPC_MSG_PARAMETER;
+#pragma pack()
+
 /*
  * Generic message.  Query type to determine which union'd payload to
  * use.
@@ -103,6 +112,7 @@ typedef struct _IPC_MSG {
         IPC_MSG_AUDIO audio;
         IPC_MSG_CYCLES cycles;
         IPC_MSG_PROCESS_AUDIO process;
+        IPC_MSG_PARAMETER parameter;
     };
 } IPC_MSG;
 #pragma pack()

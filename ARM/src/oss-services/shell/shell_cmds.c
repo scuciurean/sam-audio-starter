@@ -21,6 +21,8 @@
 #include "syslog.h"
 #include "twi_simple.h"
 #include "shell.h"
+#include "sae.h"
+#include "sae_pro.h"
 #include "shell_printf.h"
 #include "term.h"
 #include "xmodem.h"
@@ -1427,6 +1429,56 @@ void shell_rm( SHELL_CONTEXT *ctx, int argc, char **argv )
     if (remove(argv[i]) != 0) {
       printf("Unable to remove '%s'\n", argv[i]);
     }
+  }
+}
+
+SAE_RESULT paramipcToCore(SAE_CONTEXT *saeContext, SAE_MSG_BUFFER *ipcBuffer, SAE_CORE_IDX core)
+{
+    SAE_RESULT result;
+
+    result = sae_sendMsgBuffer(saeContext, ipcBuffer, core, true);
+    if (result != SAE_RESULT_OK) {
+        sae_unRefMsgBuffer(saeContext, ipcBuffer);
+    }
+
+    return(result);
+}
+
+SAE_RESULT paramIpcToCore(APP_CONTEXT *context, uint8_t param, uint32_t value, SAE_CORE_IDX core)
+{
+    SAE_CONTEXT *saeContext = context->saeContext;
+    SAE_MSG_BUFFER *ipcBuffer;
+    SAE_RESULT result;
+    IPC_MSG *msg;
+    ipcBuffer = sae_createMsgBuffer(saeContext, sizeof(*msg), (void **)&msg);
+    if (ipcBuffer) {
+        msg->type = IPC_TYPE_PARAMETER;
+        msg->parameter.id = param;
+        msg->parameter.value = value;
+        result = paramipcToCore(saeContext, ipcBuffer, core);
+    } else {
+        result = SAE_RESULT_ERROR;
+    }
+
+    return(result);
+}
+
+const char shell_help_param[] = "<arg> [<val> ...]\n";
+const char shell_help_summary_param[] = "Set a custom parameter value";
+void shell_param( SHELL_CONTEXT *ctx, int argc, char **argv )
+{
+  int i;
+
+  if (argc < 2) {
+       printf( "Usage: param <arg> to read the value and"
+               "       param <arg> <val> to set the value\n" );
+       return;
+  }
+
+  if (argc == 2) {
+        //TODO: read the parameter value and print it out
+  } else if (argc == 3) {
+        paramIpcToCore(context, (uint8_t)atoi(argv[1]), (uint32_t)strtoul(argv[2], NULL, 0), 1);
   }
 }
 
