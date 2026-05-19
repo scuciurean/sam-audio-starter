@@ -1444,7 +1444,9 @@ SAE_RESULT paramipcToCore(SAE_CONTEXT *saeContext, SAE_MSG_BUFFER *ipcBuffer, SA
     return(result);
 }
 
-SAE_RESULT paramIpcToCore(APP_CONTEXT *context, uint8_t param, uint32_t value, SAE_CORE_IDX core)
+SAE_RESULT paramIpcToCore(APP_CONTEXT *context, uint8_t param,
+    uint32_t ang, int32_t elev, uint32_t dist, uint32_t gain,
+    SAE_CORE_IDX core)
 {
     SAE_CONTEXT *saeContext = context->saeContext;
     SAE_MSG_BUFFER *ipcBuffer;
@@ -1453,8 +1455,11 @@ SAE_RESULT paramIpcToCore(APP_CONTEXT *context, uint8_t param, uint32_t value, S
     ipcBuffer = sae_createMsgBuffer(saeContext, sizeof(*msg), (void **)&msg);
     if (ipcBuffer) {
         msg->type = IPC_TYPE_PARAMETER;
-        msg->parameter.id = param;
-        msg->parameter.value = value;
+        msg->parameter.id   = param;
+        msg->parameter.ang  = ang;
+        msg->parameter.elev = elev;
+        msg->parameter.dist = dist;
+        msg->parameter.gain = gain;
         result = paramipcToCore(saeContext, ipcBuffer, core);
     } else {
         result = SAE_RESULT_ERROR;
@@ -1463,23 +1468,27 @@ SAE_RESULT paramIpcToCore(APP_CONTEXT *context, uint8_t param, uint32_t value, S
     return(result);
 }
 
-const char shell_help_param[] = "<arg> [<val> ...]\n";
-const char shell_help_summary_param[] = "Set a custom parameter value";
+const char shell_help_param[] = "<id> <ang> <elev> <dist> <gain>\n";
+const char shell_help_summary_param[] = "Set stem spatial parameters (ang 0-359, elev -45..+90, dist 0-100, gain 0-100)";
 void shell_param( SHELL_CONTEXT *ctx, int argc, char **argv )
 {
-  int i;
-
-  if (argc < 2) {
-       printf( "Usage: param <arg> to read the value and"
-               "       param <arg> <val> to set the value\n" );
+  if (argc != 6) {
+       printf( "Usage: param <id> <ang> <elev> <dist> <gain>\n"
+               "  id   : stem index 0-3\n"
+               "  ang  : azimuth 0..359 degrees\n"
+               "  elev : elevation -45..+90 degrees\n"
+               "  dist : distance 0..100 (0=near/loud, 100=far/quiet)\n"
+               "  gain : volume 0..100 (100=unity)\n" );
        return;
   }
 
-  if (argc == 2) {
-        //TODO: read the parameter value and print it out
-  } else if (argc == 3) {
-        paramIpcToCore(context, (uint8_t)atoi(argv[1]), (uint32_t)strtoul(argv[2], NULL, 0), 1);
-  }
+  paramIpcToCore(context,
+      (uint8_t)atoi(argv[1]),
+      (uint32_t)strtoul(argv[2], NULL, 0),
+      (int32_t)strtol(argv[3], NULL, 0),
+      (uint32_t)strtoul(argv[4], NULL, 0),
+      (uint32_t)strtoul(argv[5], NULL, 0),
+      1);
 }
 
 /***********************************************************************

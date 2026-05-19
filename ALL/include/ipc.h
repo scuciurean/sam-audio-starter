@@ -94,9 +94,12 @@ typedef struct _IPC_MSG_PROCESS_AUDIO {
 
 #pragma pack(1)
 typedef struct _IPC_MSG_PARAMETER {
-       uint8_t id;
-       uint8_t reserved[3];
-       uint32_t value;
+    uint8_t  id;
+    uint8_t  reserved[3];
+    uint32_t ang;   /* azimuth 0..359 deg */
+    int32_t  elev;  /* elevation -45..+90 deg */
+    uint32_t dist;  /* distance 0..100 (0=near/loud, 100=far/quiet) */
+    uint32_t gain;  /* gain 0..100 (100 = unity, converted to Q15 on SHARC) */
 } IPC_MSG_PARAMETER;
 #pragma pack()
 
