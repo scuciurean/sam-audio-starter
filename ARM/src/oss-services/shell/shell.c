@@ -62,6 +62,7 @@ SHELL_FUNC( shell_cat );
 SHELL_FUNC( shell_cp );
 SHELL_FUNC( shell_stacks );
 SHELL_FUNC( shell_cpu );
+SHELL_FUNC( shell_cputime );
 SHELL_FUNC( shell_usb );
 SHELL_FUNC( shell_recv );
 SHELL_FUNC( shell_send );
@@ -157,6 +158,7 @@ const SHELL_COMMAND shell_commands[] =
   { "copy", shell_cp },
   { "stacks", shell_stacks },
   { "cpu", shell_cpu },
+  { "cputime", shell_cputime },
   { "uac", shell_usb },
   { "usb", shell_usb },
   { "recv", shell_recv },

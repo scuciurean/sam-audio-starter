@@ -236,8 +236,10 @@ static void elev_shelf_and_reflection(int stem,
 
 /*
  * Stripped-down HRTF: no crossfade, no smoothing — just FIR convolution at the
- * current azimuth. IR is pre-interpolated once per chunk. Doubled delay buffer
- * for branch-free inner loop. Use this when CPU budget is tight.
+ * current azimuth.  Block-FIR structure: outer loop over taps, inner loop over
+ * frames — enables SHARC SIMD (parallel dual-MAC) since the inner loop is a
+ * constant-coefficient multiply-accumulate across the frame vector.
+ * Accumulator is not shifted per tap; single shift at the end avoids wasted cycles.
  */
 #pragma optimize_for_speed
 static void hrtf_apply_stem_v2(int stem,
@@ -250,32 +252,50 @@ static void hrtf_apply_stem_v2(int stem,
     int az = (360 - (int)(hrtf_target_az_deg[stem] % 360)) % 360;
     int idx = hrtf_index(az);
 
-    /* Snap to nearest table entry, use only first HRTF_CONV_LEN taps (99.3% energy) */
-    static int32_t v2_dd[HRTF_NUM_STEMS][HRTF_CONV_LEN * 2];
     const int32_t *h_L = hrtf_table[idx].ir_L;
     const int32_t *h_R = hrtf_table[idx].ir_R;
 
-    int32_t *dd  = v2_dd[stem];
-    int      widx = hrtf_widx[stem];
+    /* De-interleave input into a contiguous mono block (enables SIMD inner loop) */
+    static int32_t mono_buf[SYSTEM_BLOCK_SIZE];
+    for (uint32_t f = 0; f < n_frames; f++)
+        mono_buf[f] = in[f * in_stride];
 
-    for (uint32_t frame = 0; frame < n_frames; frame++) {
-        int32_t mono = in[frame * in_stride];
-        dd[widx] = dd[widx + HRTF_CONV_LEN] = mono;
-        /* Read backwards from widx: rd[0]=newest, rd[1]=one-sample-old, ...
-           The doubled buffer lets us walk forward through memory while
-           logically reading the delay line from newest to oldest. */
-        const int32_t *rd = dd + HRTF_CONV_LEN + widx;
-        int64_t acc_L = 0, acc_R = 0;
-        for (int k = 0; k < HRTF_CONV_LEN; k++) {
-            acc_L += ((int64_t)rd[-k] * h_L[k]) >> 16;
-            acc_R += ((int64_t)rd[-k] * h_R[k]) >> 16;
+    /* Delay line: HRTF_CONV_LEN history + n_frames new samples, contiguous.
+     * Layout: [history (HRTF_CONV_LEN) | current block (SYSTEM_BLOCK_SIZE)]
+     * After processing, tail of this buffer becomes next block's history. */
+    static int32_t dl[HRTF_NUM_STEMS][HRTF_CONV_LEN + SYSTEM_BLOCK_SIZE];
+    int32_t *d = dl[stem];
+
+    /* Append new samples after the history */
+    memcpy(d + HRTF_CONV_LEN, mono_buf, n_frames * sizeof(int32_t));
+
+    /* Block FIR: accumulate without per-tap shift.
+     * acc_L[f] = sum_k { d[HRTF_CONV_LEN + f - k] * h_L[k] }
+     * Outer loop = taps (constant coeff), inner loop = frames (vectorizable). */
+    static int64_t acc_L[SYSTEM_BLOCK_SIZE];
+    static int64_t acc_R[SYSTEM_BLOCK_SIZE];
+    memset(acc_L, 0, n_frames * sizeof(int64_t));
+    memset(acc_R, 0, n_frames * sizeof(int64_t));
+
+    for (int k = 0; k < HRTF_CONV_LEN; k++) {
+        int32_t cL = h_L[k];
+        int32_t cR = h_R[k];
+        /* Pointer to d[HRTF_CONV_LEN - k + f] for f=0..n_frames-1 */
+        const int32_t * restrict src_ptr = d + (HRTF_CONV_LEN - k);
+        for (uint32_t f = 0; f < n_frames; f++) {
+            acc_L[f] += (int64_t)src_ptr[f] * cL;
+            acc_R[f] += (int64_t)src_ptr[f] * cR;
         }
-        if (++widx >= HRTF_CONV_LEN) widx = 0;
-        out_L[frame] = (int32_t)(acc_L >> 20);
-        out_R[frame] = (int32_t)(acc_R >> 20);
     }
 
-    hrtf_widx[stem] = widx;
+    /* Single shift at the end: combined >>36 (16 fractional from IR + 20 output scale) */
+    for (uint32_t f = 0; f < n_frames; f++) {
+        out_L[f] = (int32_t)(acc_L[f] >> 36);
+        out_R[f] = (int32_t)(acc_R[f] >> 36);
+    }
+
+    /* Shift history: move last HRTF_CONV_LEN samples to the front */
+    memmove(d, d + n_frames, HRTF_CONV_LEN * sizeof(int32_t));
 }
 
 /*
@@ -427,16 +447,21 @@ static void hrtf_apply(IPC_MSG_AUDIO *src, IPC_MSG_AUDIO *sink)
             stem_L[s], stem_R[s], n);
     }
 
-    /* Elevation: high-shelf spectral shaping + ceiling reflection.
-     * Distance + cosine level: combined in one multiply pass after. */
+    /* Elevation: high-shelf spectral shaping + ceiling reflection. */
     for (int s = 0; s < HRTF_ACTIVE_STEMS; s++) {
         int32_t elev = hrtf_target_elev[s];
 
         elev_shelf_and_reflection(s,
             src->data + s, in_stride,
             stem_L[s], stem_R[s], n, elev);
+    }
 
-        /* Level cues: cosine elevation gain × distance gain, one pass. */
+    /* Fused gain + mix: per-stem combined gain (elev×dist×user) applied
+     * during the stereo summation — one pass over stem data, no separate
+     * gain loop.  Saves 4×n memory read/write cycles. */
+    static int32_t stem_cg[HRTF_NUM_STEMS];
+    for (int s = 0; s < HRTF_ACTIVE_STEMS; s++) {
+        int32_t elev = hrtf_target_elev[s];
         if (elev < -45) elev = -45;
         if (elev >  90) elev =  90;
         int32_t eg = hrtf_elev_gain_q15[elev < 0 ? -elev : elev];
@@ -446,24 +471,22 @@ static void hrtf_apply(IPC_MSG_AUDIO *src, IPC_MSG_AUDIO *sink)
         int32_t dg = (int32_t)((100u - dist) * 32768u / 100u);
 
         int32_t cg = (int32_t)(((int64_t)eg * dg) >> 15);
-
-        for (uint32_t f = 0; f < n; f++) {
-            stem_L[s][f] = (int32_t)(((int64_t)stem_L[s][f] * cg) >> 15);
-            stem_R[s][f] = (int32_t)(((int64_t)stem_R[s][f] * cg) >> 15);
-        }
+        /* Combine with user gain: cg×stem_gain >> 15 */
+        stem_cg[s] = (int32_t)(((int64_t)cg * (int32_t)stem_gain_q15[s]) >> 15);
     }
 
-    /* Mix: apply per-stem gain then sum → stereo output. */
+    /* Mix: single pass, fused gain. Inner loop is SIMD-friendly (constant
+     * gain per stem, straight multiply-accumulate across frames). */
     int out_stride = (int)sink->numChannels;
     for (uint32_t f = 0; f < n; f++) {
         int64_t mix_L = 0, mix_R = 0;
         for (int s = 0; s < HRTF_ACTIVE_STEMS; s++) {
-            int32_t g = (int32_t)stem_gain_q15[s];
-            mix_L += ((int64_t)stem_L[s][f] * g) >> 15;
-            mix_R += ((int64_t)stem_R[s][f] * g) >> 15;
+            int32_t g = stem_cg[s];
+            mix_L += (int64_t)stem_L[s][f] * g;
+            mix_R += (int64_t)stem_R[s][f] * g;
         }
-        sink->data[f * out_stride + 0] = (int32_t)mix_L;
-        sink->data[f * out_stride + 1] = (int32_t)mix_R;
+        sink->data[f * out_stride + 0] = (int32_t)(mix_L >> 15);
+        sink->data[f * out_stride + 1] = (int32_t)(mix_R >> 15);
     }
 }
 

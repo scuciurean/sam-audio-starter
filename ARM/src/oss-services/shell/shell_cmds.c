@@ -1728,6 +1728,41 @@ const char shell_help_summary_cpu[] = "Report cpu usage";
 
 #include "cpu_load.h"
 #include "clock_domain.h"
+#include "clocks.h"
+
+const char shell_help_cputime[] = "<sharc0|sharc1>\n";
+const char shell_help_summary_cputime[] = "Report SHARC execution time in microseconds";
+
+void shell_cputime( SHELL_CONTEXT *ctx, int argc, char **argv )
+{
+    int i;
+
+    if (argc < 2) {
+        printf("Usage: cputime <sharc0|sharc1>\n");
+        return;
+    }
+
+    if (strcmp(argv[1], "sharc0") == 0) {
+        printf("SHARC0 Execution Time:\n");
+        for (i = 0; i < CLOCK_DOMAIN_MAX; i++) {
+            uint32_t cycles = context->sharc0Cycles[i];
+            /* CCLK_1 = 250 MHz → 1 cycle = 4 ns; us = cycles * 1000 / (CCLK_1 / 1000000) */
+            uint32_t us = (uint32_t)((uint64_t)cycles * 1000000ULL / CCLK_1);
+            printf(" %s: %lu us (%lu cycles)\n", clock_domain_str(i), us, cycles);
+        }
+    } else if (strcmp(argv[1], "sharc1") == 0) {
+        printf("SHARC1 Execution Time:\n");
+        for (i = 0; i < CLOCK_DOMAIN_MAX; i++) {
+            uint32_t cycles = context->sharc1Cycles[i];
+            uint32_t us = (uint32_t)((uint64_t)cycles * 1000000ULL / CCLK_1);
+            printf(" %s: %lu us (%lu cycles)\n", clock_domain_str(i), us, cycles);
+        }
+    } else if (strcmp(argv[1], "arm") == 0) {
+        printf("ARM: not implemented yet\n");
+    } else {
+        printf("Unknown core: %s\n", argv[1]);
+    }
+}
 
 void shell_cpu( SHELL_CONTEXT *ctx, int argc, char **argv )
 {
